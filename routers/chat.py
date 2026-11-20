@@ -1,6 +1,7 @@
 import json
+import logging
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
 
@@ -12,6 +13,7 @@ from llm.client import chat_completion
 from llm.prompts import SYSTEM
 from services.tools import TOOLS, call_tool
 
+logger = logging.getLogger(__name__)
 r = APIRouter(tags=["chat"])
 
 
@@ -49,25 +51,34 @@ async def chat(b: Req, u: User = Depends(get_current_user)):
         await save_msg(u, "assistant", config.BLOCK_REPLY)
         return {"response": config.BLOCK_REPLY}
 
-    h = await load_history(u)
-    p = [{"role": "system", "content": SYSTEM}] + h + [{"role": "user", "content": b.message}]
-    a = await chat_completion(p, TOOLS)
+    try:
+        h = await load_history(u)
+        p = [{"role": "system", "content": SYSTEM}] + h + [{"role": "user", "content": b.message}]
+        a = await chat_completion(p, TOOLS)
 
-    i = 0
-    while a.get("tool_calls") and i < 5:
-        i += 1
-        p.append(a)
-        for c in a["tool_calls"]:
-            n = c["function"]["name"]
-            try:
-                args = json.loads(c["function"].get("arguments") or "{}")
-            except json.JSONDecodeError:
-                args = {}
-            res = await call_tool(n, args)
-            p.append({"role": "tool", "tool_call_id": c["id"], "content": res})
-        a = await chat_completion(p)
+        i = 0
+        while a.get("tool_calls") and i < 5:
+            i += 1
+            p.append(a)
+            for c in a["tool_calls"]:
+                n = c["function"]["name"]
+                try:
+                    args = json.loads(c["function"].get("arguments") or "{}")
+                except json.JSONDecodeError:
+                    args = {}
+                res = await call_tool(n, args)
+                p.append({"role": "tool", "tool_call_id": c["id"], "content": res})
+            a = await chat_completion(p)
 
-    t = a.get("content") or ""
-    await save_msg(u, "user", b.message)
-    await save_msg(u, "assistant", t)
-    return {"response": t}
+        answer = a.get("content") or ""
+        await save_msg(u, "user", b.message)
+        await save_msg(u, "assistant", answer)
+        return {"response": answer}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Chat request failed: %s", type(exc).__name__)
+        raise HTTPException(
+            status_code=502,
+            detail="ИИ-помощник временно недоступен. Проверьте настройки подключения внешнего AI API.",
+        ) from exc
