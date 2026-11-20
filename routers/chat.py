@@ -51,6 +51,12 @@ async def chat(b: Req, u: User = Depends(get_current_user)):
         await save_msg(u, "assistant", config.BLOCK_REPLY)
         return {"response": config.BLOCK_REPLY}
 
+    if not config.LLM_KEY or not config.LLM_KEY.strip():
+        raise HTTPException(
+            status_code=503,
+            detail="На сервере не задан LLM_KEY. Добавьте API-ключ OpenRouter в Environment Variables сервиса Render.",
+        )
+
     try:
         h = await load_history(u)
         p = [{"role": "system", "content": SYSTEM}] + h + [{"role": "user", "content": b.message}]
