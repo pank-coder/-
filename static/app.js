@@ -172,9 +172,9 @@
     } catch (error) {
       hideTyping();
       const messageText = error.status === 503
-        ? 'На сервере не настроен ключ OpenRouter. Администратору нужно добавить LLM_KEY в Render → Environment Variables.'
+        ? 'Не настроено подключение к Yandex AI Studio. Администратору нужно добавить YANDEX_API_KEY и YANDEX_FOLDER_ID в Render → Environment Variables.'
         : error.status === 502
-          ? 'Сервис ИИ временно недоступен. Попробуй ещё раз позже.'
+          ? 'Yandex AI Studio временно недоступна. Проверь ключ, ID каталога и доступ к модели.'
           : error.status === 404
             ? 'Сервер не нашёл нужный адрес API. Проверь версию приложения.'
             : 'Не удаётся связаться с помощником. Проверь соединение и попробуй ещё раз.';
