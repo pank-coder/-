@@ -51,40 +51,65 @@ async def chat(b: Req, u: User = Depends(get_current_user)):
         await save_msg(u, "assistant", config.BLOCK_REPLY)
         return {"response": config.BLOCK_REPLY}
 
-    if not config.LLM_KEY or not config.LLM_KEY.strip():
+    if not config.YANDEX_API_KEY or not config.YANDEX_FOLDER_ID:
         raise HTTPException(
             status_code=503,
-            detail="На сервере не задан LLM_KEY. Добавьте API-ключ OpenRouter в Environment Variables сервиса Render.",
+            detail=(
+                "Не настроено подключение к Yandex AI Studio. "
+                "Добавьте YANDEX_API_KEY и YANDEX_FOLDER_ID в Environment Variables сервиса Render."
+            ),
         )
 
     try:
-        h = await load_history(u)
-        p = [{"role": "system", "content": SYSTEM}] + h + [{"role": "user", "content": b.message}]
-        a = await chat_completion(p, TOOLS)
+        history = await load_history(u)
+        messages = [
+            {"role": "system", "content": SYSTEM},
+            *history,
+            {"role": "user", "content": b.message},
+        ]
 
-        i = 0
-        while a.get("tool_calls") and i < 5:
-            i += 1
-            p.append(a)
-            for c in a["tool_calls"]:
-                n = c["function"]["name"]
+        answer_message = await chat_completion(messages, TOOLS)
+
+        # Allow up to five tool-call rounds while keeping the existing school tools.
+        rounds = 0
+        while answer_message.get("tool_calls") and rounds < 5:
+            rounds += 1
+            messages.append(answer_message)
+
+            for tool_call in answer_message["tool_calls"]:
+                tool_name = tool_call["function"]["name"]
                 try:
-                    args = json.loads(c["function"].get("arguments") or "{}")
+                    arguments = json.loads(
+                        tool_call["function"].get("arguments") or "{}"
+                    )
                 except json.JSONDecodeError:
-                    args = {}
-                res = await call_tool(n, args)
-                p.append({"role": "tool", "tool_call_id": c["id"], "content": res})
-            a = await chat_completion(p)
+                    arguments = {}
 
-        answer = a.get("content") or ""
+                result = await call_tool(tool_name, arguments)
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tool_call["id"],
+                    "content": result,
+                })
+
+            answer_message = await chat_completion(messages, TOOLS)
+
+        answer = answer_message.get("content") or ""
+        if not answer and answer_message.get("refusal"):
+            answer = answer_message["refusal"]
+
         await save_msg(u, "user", b.message)
         await save_msg(u, "assistant", answer)
         return {"response": answer}
+
     except HTTPException:
         raise
     except Exception as exc:
         logger.exception("Chat request failed: %s", type(exc).__name__)
         raise HTTPException(
             status_code=502,
-            detail="ИИ-помощник временно недоступен. Проверьте настройки подключения внешнего AI API.",
+            detail=(
+                "Yandex AI Studio временно недоступна. "
+                "Проверьте API-ключ, ID каталога, права сервисного аккаунта и доступность модели."
+            ),
         ) from exc
