@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f4f6fb">
+  <meta name="description" content="Помощник гимназии «Универс»: расписание, учителя, новости и мероприятия в одном чате.">
+  <title>Универс — помощник гимназии</title>
+  <link rel="stylesheet" href="/static/styles.css">
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="Универс — главная">
+      <span class="brand-mark">У<span>✳</span></span>
+      <span class="brand-name"><b>УНИВЕРС</b><small>ГИМНАЗИЯ № 1</small></span>
+    </a>
+    <div class="top-note"><i></i> Помощник гимназии</div>
+  </header>
+  <main class="layout">
+    <section class="intro">
+      <div class="eyebrow"><span></span> ТВОЙ ГИД ПО ГИМНАЗИИ</div>
+      <h1>Всё про<br>«Универс» —<br><em>в одном месте.</em></h1>
+      <p class="intro-copy">Спроси — и помощник подскажет расписание, поможет найти учителя или расскажет, что происходит в гимназии.</p>
+      <div class="features">
+        <div class="feature"><span class="feature-icon blue">▦</span><div><b>Расписание</b><small>Уроки, кабинеты и учителя</small></div></div>
+        <div class="feature"><span class="feature-icon green">⌕</span><div><b>Учителя</b><small>Предметы и контакты</small></div></div>
+        <div class="feature"><span class="feature-icon violet">✳</span><div><b>Новости и события</b><small>Что нового и что впереди</small></div></div>
+      </div>
+      <div class="school-note"><span>✳</span><div><b>МАОУ «КУГ № 1 — Универс»</b><small>Красноярск · ул. Корнеева, 50</small></div></div>
+    </section>
+    <section class="chat-card" aria-label="Чат с помощником">
+      <header class="chat-head">
+        <div class="bot-identity"><span class="bot-avatar">✳</span><div><b>Помощник «Универс»</b><small id="connection-label">Подключаемся…</small></div></div>
+        <span class="status connecting" id="connection-status"><i></i><b>онлайн</b></span>
+      </header>
+      <div class="chat-rule"></div>
+      <div class="messages" id="messages" aria-live="polite">
+        <article class="message assistant"><span class="message-avatar">U</span><div class="message-body"><div class="message-meta">ПОМОЩНИК <span>·</span> только что</div><div class="bubble">Привет! Я помощник гимназии «Универс». Подскажу расписание, помогу найти информацию об учителях и расскажу о новостях и мероприятиях. Что тебя интересует?</div></div></article>
+      </div>
+      <div class="suggestions" id="suggestions">
+        <div class="suggestion-label">МОЖНО СПРОСИТЬ</div>
+        <div class="suggestion-list">
+          <button type="button" data-prompt="Какое расписание у 9А на понедельник?">▦ Расписание 9А</button>
+          <button type="button" data-prompt="Найди учителя физики">⌕ Найти учителя</button>
+          <button type="button" data-prompt="Какие мероприятия скоро будут в гимназии?">✳ Мероприятия</button>
+          <button type="button" data-prompt="Расскажи последние новости гимназии">↗ Новости</button>
+        </div>
+      </div>
+      <form class="composer" id="chat-form">
+        <label class="sr-only" for="message-input">Ваш вопрос</label>
+        <textarea id="message-input" rows="1" maxlength="2000" placeholder="Напиши свой вопрос…" autocomplete="off"></textarea>
+        <button class="send" id="send-button" type="submit" aria-label="Отправить сообщение" disabled><span>↗</span></button>
+      </form>
+      <div class="composer-foot"><span>Enter — отправить · Shift + Enter — новая строка</span><span>✦ Учебные задания не решаю</span></div>
+    </section>
+  </main>
+  <footer class="footer"><span>УНИВЕРС — ПОМОЩНИК ГИМНАЗИИ</span><span>Сделано для тех, кто учится и учит</span></footer>
+</body>
+</html>
