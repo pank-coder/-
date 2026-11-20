@@ -29,7 +29,7 @@ async def chat_completion(messages, tools=None):
 
     async with httpx.AsyncClient(timeout=60) as client:
         response = await client.post(
-            config.YLM_URL if hasattr(config, "YLM_URL") else config.LLM_URL,
+            config.LLM_URL,
             headers=headers,
             json=payload,
         )
