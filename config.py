@@ -4,13 +4,15 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# Yandex AI Studio (OpenAI-compatible Chat Completions API).
-YANDEX_API_URL = "https://ai.api.cloud.yandex.net/v1/chat/completions"
+# Native Yandex Foundation Models Completion API.
+YANDEX_API_URL = os.getenv(
+    "YANDEX_API_URL",
+    "https://llm.api.cloud.yandex.net/foundationModels/v1/completion",
+).strip()
 YANDEX_API_KEY = os.getenv("YANDEX_API_KEY", "").strip()
 YANDEX_FOLDER_ID = os.getenv("YANDEX_FOLDER_ID", "").strip()
 YANDEX_MODEL = os.getenv("YANDEX_MODEL", "yandexgpt-5.1").strip()
 
-# Compatibility aliases used by the existing LLM route/client.
 LLM_URL = YANDEX_API_URL
 LLM_KEY = YANDEX_API_KEY
 LLM_MODEL = (
