@@ -18,34 +18,45 @@ def _plain_text(value):
 
 
 def _to_yandex_messages(messages):
-    """Translate the app's chat history to the native Yandex message format."""
+    """Convert app history to Yandex Completion messages and skip empty turns."""
     converted = []
     for item in messages:
         role = item.get("role", "user")
+
         if role == "tool":
-            converted.append({
-                "role": "user",
-                "text": "Результат вызова инструмента " +
-                        str(item.get("name", "")) + ":\n" +
-                        _plain_text(item.get("content")),
-            })
-        elif role == "assistant" and item.get("tool_calls"):
+            tool_text = (
+                "Результат вызова инструмента "
+                + str(item.get("name", ""))
+                + ":\n"
+                + _plain_text(item.get("content"))
+            ).strip()
+            if tool_text:
+                converted.append({"role": "user", "text": tool_text})
+            continue
+
+        if role == "assistant" and item.get("tool_calls"):
             calls = []
             for call in item["tool_calls"]:
                 function = call.get("function", {})
                 calls.append(
-                    function.get("name", "") + "(" +
-                    _plain_text(function.get("arguments", "{}")) + ")"
+                    function.get("name", "")
+                    + "("
+                    + _plain_text(function.get("arguments", "{}"))
+                    + ")"
                 )
-            converted.append({
-                "role": "assistant",
-                "text": "Я запросил выполнение инструмента: " + "; ".join(calls),
-            })
-        elif role in {"system", "assistant", "user"}:
-            converted.append({
-                "role": role,
-                "text": _plain_text(item.get("content")),
-            })
+            call_text = "Выполняю запросы к данным гимназии: " + "; ".join(calls)
+            if call_text.strip():
+                converted.append({"role": "assistant", "text": call_text})
+            continue
+
+        if role in {"system", "assistant", "user"}:
+            text = _plain_text(item.get("content")).strip()
+            # Yandex rejects empty message text with HTTP 400.
+            if not text:
+                logger.warning("Skipping an empty %s message from conversation history", role)
+                continue
+            converted.append({"role": role, "text": text})
+
     return converted
 
 
@@ -66,12 +77,14 @@ def _tool_instruction(tools):
         "Если инструмент нужен, верни ТОЛЬКО JSON следующего вида: "
         '{"tool":"имя_инструмента","arguments":{...}}. '
         "Не добавляй Markdown и пояснения.\n"
-        "Если инструменты не нужны или данных недостаточно, верни ТОЛЬКО JSON: "
-        '{"answer":"текст ответа или один уточняющий вопрос"}.\n'
+        "Если пользователь здоровается, задаёт общий вопрос или инструмент не нужен, "
+        "верни JSON с непустым полем answer: "
+        '{"answer":"понятный ответ пользователю"}.\n'
+        "Не возвращай пустой объект {}. "
         "Не вызывай инструменты, которых нет в списке. Аргументы должны "
         "соответствовать описанной JSON Schema.\n"
-        "Список инструментов:\n" +
-        json.dumps(definitions, ensure_ascii=False)
+        "Список инструментов:\n"
+        + json.dumps(definitions, ensure_ascii=False)
     )
 
 
@@ -81,6 +94,10 @@ async def _request_yandex(messages, force_json=False):
     if not config.YANDEX_FOLDER_ID:
         raise RuntimeError("Yandex AI Studio folder ID is not configured")
 
+    yandex_messages = _to_yandex_messages(messages)
+    if not yandex_messages:
+        raise RuntimeError("No non-empty messages to send to Yandex AI Studio")
+
     payload = {
         "modelUri": config.LLM_MODEL,
         "completionOptions": {
@@ -88,7 +105,7 @@ async def _request_yandex(messages, force_json=False):
             "temperature": 0.2,
             "maxTokens": "1800",
         },
-        "messages": _to_yandex_messages(messages),
+        "messages": yandex_messages,
     }
     if force_json:
         payload["jsonObject"] = True
@@ -144,55 +161,81 @@ async def _request_yandex(messages, force_json=False):
             ]
         }
 
-    text = message.get("text", "")
-    if not isinstance(text, str):
-        text = _plain_text(text)
-
-    return {"content": text}
+    generated_text = _plain_text(message.get("text")).strip()
+    return {"content": generated_text}
 
 
 async def chat_completion(messages, tools=None):
     request_messages = list(messages)
+
     if tools:
+        original_system = _plain_text(request_messages[0].get("content"))
         request_messages[0] = {
             "role": "system",
-            "content": _plain_text(request_messages[0].get("content")) +
-                       _tool_instruction(tools),
+            "content": original_system + _tool_instruction(tools),
         }
+
         result = await _request_yandex(request_messages, force_json=True)
         if result.get("tool_calls"):
             return result
 
-        raw = result.get("content", "")
+        raw = result.get("content", "").strip()
         try:
-            decision = json.loads(raw)
+            decision = json.loads(raw) if raw else {}
         except (json.JSONDecodeError, TypeError):
-            logger.warning("Yandex tool router returned non-JSON output")
-            return {"content": raw}
+            decision = {}
 
-        tool_name = decision.get("tool")
-        arguments = decision.get("arguments") or {}
-        allowed_names = {
-            item.get("function", {}).get("name")
-            for item in tools
-        }
-        if tool_name in allowed_names and isinstance(arguments, dict):
-            return {
-                "tool_calls": [
-                    {
-                        "id": "yandex_" + uuid.uuid4().hex,
-                        "type": "function",
-                        "function": {
-                            "name": tool_name,
-                            "arguments": json.dumps(arguments, ensure_ascii=False),
-                        },
-                    }
-                ]
+        if isinstance(decision, dict):
+            tool_name = decision.get("tool")
+            arguments = decision.get("arguments") or {}
+            allowed_names = {
+                item.get("function", {}).get("name")
+                for item in tools
             }
 
-        answer = decision.get("answer")
-        if isinstance(answer, str):
-            return {"content": answer}
-        return {"content": raw}
+            if tool_name in allowed_names and isinstance(arguments, dict):
+                return {
+                    "tool_calls": [
+                        {
+                            "id": "yandex_" + uuid.uuid4().hex,
+                            "type": "function",
+                            "function": {
+                                "name": tool_name,
+                                "arguments": json.dumps(arguments, ensure_ascii=False),
+                            },
+                        }
+                    ]
+                }
 
-    return await _request_yandex(request_messages, force_json=False)
+            answer = decision.get("answer")
+            if isinstance(answer, str) and answer.strip():
+                return {"content": answer.strip()}
+
+        # The model occasionally returns {} for a simple greeting or question.
+        # Retry once without JSON mode and ask for ordinary natural-language text.
+        logger.warning("Yandex returned an empty or unusable tool-routing JSON; retrying as plain text")
+        fallback_messages = list(messages)
+        fallback_messages[0] = {
+            "role": "system",
+            "content": (
+                _plain_text(messages[0].get("content"))
+                + "\n\nОтветь пользователю обычным естественным русским текстом. "
+                  "Не возвращай JSON, фигурные скобки или пустой ответ. "
+                  "Если вопрос требует данных гимназии, которых нет в контексте, "
+                  "честно попроси уточнить запрос."
+            ),
+        }
+        fallback = await _request_yandex(fallback_messages, force_json=False)
+        fallback_text = _plain_text(fallback.get("content")).strip()
+        if fallback_text and fallback_text not in {"{}", "null"}:
+            return {"content": fallback_text}
+
+        return {
+            "content": "Привет! Я помощник гимназии «Универс». Могу помочь с расписанием, учителями, новостями и мероприятиями. Что тебя интересует?"
+        }
+
+    result = await _request_yandex(request_messages, force_json=False)
+    text = _plain_text(result.get("content")).strip()
+    if not text or text in {"{}", "null"}:
+        return {"content": "Не удалось подготовить ответ. Попробуй, пожалуйста, задать вопрос ещё раз."}
+    return {"content": text}
